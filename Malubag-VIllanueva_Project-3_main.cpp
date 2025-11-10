@@ -196,14 +196,37 @@ void showCode(string &address, int N, uint8_t * &instruction_memory,
   }
 }
 
+// TBD: MOVED TO INSTRUCTION_DECODE & _EXECUTE
 int execInstruction(unsigned int instruction, long long * &reg, 
                      uint8_t * &mem)
 {
-  // Save cout state
-  ios_base::fmtflags originalFlags = cout.flags();
-  
-  cout << "\nInstruction: " << bitset<32>(instruction) << "\n\n";
+  // check p2_code_dump.txt
+}
 
+// PIPELINING STAGES (info from geeksforgeeks)
+
+// TBD: TO IMPROVE...
+// [] make string isnt, long long a, b, c and int rd as struct/class
+
+// fetches a single instruction from address in memory location whose value is stored in program counter
+// TBD: TO ADD VALIDATION FOR OUT OF BOUNDS
+unsigned int instruction_fetch(int pc, uint8_t * &instruction_memory)
+{
+  unsigned int instruction = 0;
+  
+  for(int i = 0; i < 4; i++)
+  {
+    instruction |= ((unsigned int)instruction_memory[pc + i]) << (i * 8);
+  }
+
+  return instruction;
+}
+
+// decodes instruction and register file is accessed to obtain values of registers used in instruction
+// TBD: TO FIX
+void instruction_decode(unsigned int instruction, long long * &reg, 
+                        string inst, long long a, long long b, long long c)
+{
   unsigned int opcode =  instruction & 0x7F;
   unsigned int rd     = (instruction >> 7)  & 0x1F;
 
@@ -229,45 +252,38 @@ int execInstruction(unsigned int instruction, long long * &reg,
               (((instruction >> 31) & 0x01) << 12);
   if (imm_b & 0x1000) imm_b |= 0xFFFFE000;
 
-  vector<unsigned int> usedRegs;
-  int pcOffset = 4;
-
   switch (opcode) {
     case 0b0110011: // R-type ADD/SUB
-
       if (funct3 == 0 && funct7 == 0x00) 
-      { // ADD
         if (rd == 0) 
         {
           cout << "ERROR: Cannot write to x0 (rd = 0)." << endl;
         } 
         else 
         {
-          reg[rd] = reg[rs1] + reg[rs2];
-          cout << "add x" << rd << ", x" << rs1 << ", x" 
-                << rs2 << endl;
-          usedRegs = {rd, rs1, rs2};
+          inst = "ADD";
+          a = reg[rs1];
+          b = reg[rs2];
+          c = reg[rd];
         }
       }
       if (funct3 == 0 && funct7 == 0x20) 
-      { // SUB
         if (rd == 0) 
         {
           cout << "ERROR: Cannot write to x0 (rd = 0)." << endl;
         } 
         else 
         {
-          reg[rd] = reg[rs1] - reg[rs2];
-          cout << "sub x" << rd << ", x" << rs1 << ", x" << rs2 
-                << endl;
-          usedRegs = {rd, rs1, rs2};
+          inst = "SUB";
+          a = reg[rs1];
+          b = reg[rs2];
+          c = reg[rd];
         }
       }
       break;
 
     case 0b0010011: // I-type
       if (funct3 == 0) 
-      { //ADDI
         if (rd == 0) 
         {
           if (!(opcode == 0b0010011 
@@ -285,10 +301,10 @@ int execInstruction(unsigned int instruction, long long * &reg,
         } 
         else 
         {
-          reg[rd] = reg[rs1] + immediate;
-          cout << "addi x" << rd << ", x" << rs1 << ", " 
-                << immediate << endl;
-          usedRegs = {rd, rs1};
+          inst = "ADDI";
+          a = reg[rs1];
+          b = immediate;
+          c = reg[rd];
         }
       }
       if (funct3 == 1 && funct7 == 0)
@@ -300,125 +316,132 @@ int execInstruction(unsigned int instruction, long long * &reg,
         } 
         else 
         {
-          reg[rd] = reg[rs1] << shamt;
-          cout << "slli x" << rd << ", x" << rs1 << ", " 
-                << shamt << endl;
-          usedRegs = {rd, rs1};
+          inst = "SLLI";
+          a = reg[rs1];
+          b = shamt;
+          c = reg[rd];
         }
       }
       break;
 
-    case 0b0000011: // I-type LD
-      if (funct3 == 3) 
-      {
-        if (rd == 0) 
-        {
-          cout << "ERROR: Cannot write to x0 (rd = 0)." << endl;
-        } 
-        else 
-        {
-          uint64_t mem_addr = reg[rs1] + immediate;
-          uint64_t val = 0;
-          for (int i = 0; i < 8; i++) 
-          {
-            val |= ((uint64_t)mem[mem_addr + i]) << (i * 8);
-          }
-          reg[rd] = val;
-          cout << "ld x" << rd << ", " << immediate 
-                << "(x" << rs1 << ")" << endl;
-          usedRegs = {rd, rs1};
-        }
-      }
-      break;
-
-    case 0b0100011: // S-type SD
-      if (funct3 == 3) 
-      {
-        uint64_t mem_addr = reg[rs1] + imm_s;
-        uint64_t val = reg[rs2];
-        for (int i = 0; i < 8; i++) 
-        {
-          mem[mem_addr + i] = (val >> (i * 8)) & 0xFF;
-        }
-        cout << "sd x" << rs2 << ", " << imm_s 
-              << "(x" << rs1 << ")" << endl;
-        usedRegs = {rs1, rs2};
-      }
-      break;
-
-     case 0b1100011: // B-type Branch instructions
+    case 0b1100011: // B-type Branch instructions
       if (funct3 == 0x1) 
         { // BLT 
-          if ((long long)reg[rs1] < (long long)reg[rs2]) 
-          {
-            cout << "blt x" << rs1 << ", x" << rs2 << ", " 
-                 << imm_b << " (branch taken)" << endl;
-            pcOffset = imm_b;
-          } 
-          else 
-          {
-            cout << "blt x" << rs1 << ", x" << rs2 << ", " 
-                 << imm_b << " (branch not taken)" << endl;
-          }
-          usedRegs = {rs1, rs2};
+          inst = "BLT";
+          a = reg[rs1];
+          b = reg[rs2];
+          c = imm_b;
         }
         else if (funct3 == 0x0)
         { // BEQ
-          if (reg[rs1] == reg[rs2]) 
-          {
-            cout << "beq x" << rs1 << ", x" << rs2 << ", " 
-                 << imm_b << " (branch taken)" << endl;
-            pcOffset = imm_b;
-          } 
-          else 
-          {
-            cout << "beq x" << rs1 << ", x" << rs2 << ", " 
-                 << imm_b << " (branch not taken)" << endl;
-          }
-          usedRegs = {rs1, rs2};
-        }
-        else if (funct3 == 0x5)
-        { // BGE
-          if ((long long)reg[rs1] >= (long long)reg[rs2]) 
-          {
-            cout << "bge x" << rs1 << ", x" << rs2 << ", " 
-                 << imm_b << " (branch taken)" << endl;
-            pcOffset = imm_b;
-          } 
-          else 
-          {
-            cout << "bge x" << rs1 << ", x" << rs2 << ", " 
-                 << imm_b << " (branch not taken)" << endl;
-          }
-          usedRegs = {rs1, rs2};
+          inst = "BEQ";
+          a = reg[rs1];
+          b = reg[rs2];
+          c = imm_b;
         }
       break;
 
-    default:
-      cout << "Unsupported instruction.\n"
-            << "opcode = 0x" << hex << opcode
-            << "\tfunct3 = 0x" << funct3
-            << "\tfunct7 = 0x" << funct7 << dec << endl;
-      cout.flags(originalFlags);
-      return 4;
+    default: 
+      inst = "UNKNOWN";
+      // a = 0;
+      // b = 0;
+      // c = 0;
+      // rd = 0;
   }
+}
 
-  if (!usedRegs.empty()) 
+// some activities are done such as ALU operations
+// TBD: TO ADD VALIDATION IF NEEDED
+void instruction_execute(string &inst, long long &a, long long &b, long long &c, int &rd)
+{
+  if (inst == "ADD") 
   {
-    cout << "\n[Register Dump]\n";
-    for (int r : usedRegs) {
-      if (r == 0) continue;
-      cout << "x" << dec << setw(2) << left << r
-           << " = " << reg[r]
-           << "\t(0x" << hex << uppercase << reg[r] << ")\n";
+    c = a + b;
+    pc_offset += 4;
+  }
+  else if (inst == "SUB") 
+  {
+    c = a - b;
+    pc_offset += 4;
+  }
+  else if (inst == "ADDI") 
+  {
+    c = a + b;
+    pc_offset += 4;
+  }
+  else if (inst == "SLLI")
+  {
+    c = a << b;
+    pc_offset += 4;
+  }
+  else if (inst == "BLT") 
+  {
+    if (a < b) 
+    {
+      pc_offset = c;
+    } 
+  }
+  else if (inst == "BEQ")
+  {
+    if (a == b) 
+    {
+      pc_offset = c;
+    } 
+  }
+}
+
+// memory operands are read and written from/to the memory that is present in the instruction
+void memory_access(string &inst, long long &a, long long &b, long long &c, int &rd, uint8_t * &mem)
+{
+  if (inst == "LD") 
+  {
+    uint64_t address = a + b;
+    if (address + 8 > memory_size) 
+    {
+      cout << "ERROR: Memory access out of bounds." << endl;
+      return;
+    }
+    c = 0;
+    for (int i = 0; i < 8; i++) 
+    {
+      c |= ((uint64_t)mem[address + i]) << (i * 8);
     }
   }
-  
-  // Restore cout state
-  cout.flags(originalFlags);
-  cout << dec;
-  
-  return pcOffset;
+  else if (inst == "SD") 
+  {
+    uint64_t address = a + b;
+    if (address + 8 > memory_size) 
+    {
+      cout << "ERROR: Memory access out of bounds." << endl;
+      return;
+    }
+    for (int i = 0; i < 8; i++) 
+    {
+      mem[address + i] = (c >> (i * 8)) & 0xFF;
+    }
+  }  
+}
+
+// computed/fetched value is written back to the register present in the instructions
+void write_back(string &inst, long long &c, int &rd, long long * &reg)
+{
+  if (rd != 0) // x0 is hardwired to 0
+  {
+    reg[rd] = c;
+  }
+}
+
+// executes RISC-v instructions in a pipelined manner
+void pipeline_loop(string &inst, long long &a, long long &b, long long &c, int &rd, long long * &reg)
+{
+  while(true)
+  {
+    write_back();
+    memory_access();
+    instruction_execute();
+    instruction_decode();
+    instruction_fetch();
+  }
 }
 
 int main()
@@ -444,7 +467,6 @@ int main()
   uint8_t *data_memory = new uint8_t [memory_size]; 
   uint8_t *instruction_memory = new uint8_t [memory_size];
   
-  // Initialize memory to zero
   for(int i=0; i<memory_size; i++) {
     data_memory[i] = 0;
     instruction_memory[i] = 0;
@@ -631,8 +653,8 @@ int main()
         cout << "\nExecuting instruction at 0x" << hex << uppercase 
              << setw(8) << setfill('0') << PC << dec << "...\n";
 
-        int pcOffset = execInstruction(instr, registers, 
-                                       data_memory);
+        // TBD: was previously exec_instruction
+        int pcOffset = pipeline_loop(instr, registers, data_memory);
 
         PC += pcOffset; 
       }

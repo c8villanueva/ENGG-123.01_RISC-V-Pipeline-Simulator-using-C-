@@ -1,0 +1,281 @@
+bool loadCode(const string &address, const string &filename, 
+              uint8_t * &instruction_memory, const int memory_size)
+{
+  unsigned long long addr = stoull(address, nullptr, 16);
+  if(addr >= memory_size)
+  {
+    cout << "\nERROR: Address exceeds memory size." << endl;
+    return false;
+  }
+
+  ifstream file(filename);
+  if(!file.is_open())
+  {
+    cout << "\nERROR: " << filename << " not found." << endl;
+    return false;
+  }
+
+  string line;  
+  while(getline(file, line))
+  {
+    stringstream ss(line);
+    string hexStr;
+
+    if(!(ss >> hexStr)) 
+    {
+      cout << "\nERROR: File contains invalid data." << endl;
+      return false;
+    }
+    if(hexStr.empty()) 
+    {
+      cout << "\nERROR: File is empty." << endl;
+      return false;
+    }
+    if(!isValidHex(hexStr, 8)) 
+    {
+      cout << "\nERROR: File contains an invalid hex string length." 
+           << endl;
+      return false;
+    }
+
+    if(addr+4 > memory_size)
+    {
+      cout << "\nERROR: Not enough space to store data." << endl;
+      break;
+    }
+
+    unsigned long long value = stoull(hexStr, nullptr, 16);
+    for(int i=0; i<4; i++)
+    {
+      instruction_memory[addr + i] = (value >> (i * 8)) & 0xFF;
+    }
+    addr += 4;
+  }
+
+  file.close();
+
+  return true;
+}
+
+int execInstruction(unsigned int instruction, long long * &reg, 
+                     uint8_t * &mem)
+{
+  ios_base::fmtflags originalFlags = cout.flags();
+  
+  cout << "\nInstruction: " << bitset<32>(instruction) << "\n\n";
+
+  unsigned int opcode =  instruction & 0x7F;
+  unsigned int rd     = (instruction >> 7)  & 0x1F;
+
+  // R Format
+  unsigned int funct3 = (instruction >> 12) & 0x07;
+  unsigned int rs1    = (instruction >> 15) & 0x1F;
+  unsigned int rs2    = (instruction >> 20) & 0x1F;
+  unsigned int funct7 = (instruction >> 25) & 0x7F;
+
+  // I Format
+  int immediate = (instruction >> 20) & 0xFFF;
+  if (immediate & 0x800) immediate |= 0xFFFFF000;
+
+  // S Format
+  int imm_s = ((instruction >> 7) & 0x1F) | 
+              (((instruction >> 25) & 0x7F) << 5);
+  if (imm_s & 0x800) imm_s |= 0xFFFFF000;
+
+  // B Format
+  int imm_b = (((instruction >> 8) & 0x0F)  << 1)  | 
+              (((instruction >> 25) & 0x3F) << 5)  | 
+              (((instruction >> 7) & 0x01)  << 11) | 
+              (((instruction >> 31) & 0x01) << 12);
+  if (imm_b & 0x1000) imm_b |= 0xFFFFE000;
+
+  vector<unsigned int> usedRegs;
+  int pcOffset = 4;
+
+  switch (opcode) {
+    case 0b0110011: // R-type ADD/SUB
+
+      if (funct3 == 0 && funct7 == 0x00) 
+      { // ADD
+        if (rd == 0) 
+        {
+          cout << "ERROR: Cannot write to x0 (rd = 0)." << endl;
+        } 
+        else 
+        {
+          reg[rd] = reg[rs1] + reg[rs2];
+          cout << "add x" << rd << ", x" << rs1 << ", x" 
+                << rs2 << endl;
+          usedRegs = {rd, rs1, rs2};
+        }
+      }
+      if (funct3 == 0 && funct7 == 0x20) 
+      { // SUB
+        if (rd == 0) 
+        {
+          cout << "ERROR: Cannot write to x0 (rd = 0)." << endl;
+        } 
+        else 
+        {
+          reg[rd] = reg[rs1] - reg[rs2];
+          cout << "sub x" << rd << ", x" << rs1 << ", x" << rs2 
+                << endl;
+          usedRegs = {rd, rs1, rs2};
+        }
+      }
+      break;
+
+    case 0b0010011: // I-type
+      if (funct3 == 0) 
+      { //ADDI
+        if (rd == 0) 
+        {
+          if (!(opcode == 0b0010011 
+              && funct3 == 0 
+              && rs1 == 0 
+              && immediate == 0)) 
+          {
+            cout << "ERROR: Cannot write to x0 (rd = 0)." << endl;
+          } 
+          else 
+          {
+            cout << "NOP (addi x0, x0, 0)" << endl;
+          }
+
+        } 
+        else 
+        {
+          reg[rd] = reg[rs1] + immediate;
+          cout << "addi x" << rd << ", x" << rs1 << ", " 
+                << immediate << endl;
+          usedRegs = {rd, rs1};
+        }
+      }
+      if (funct3 == 1 && funct7 == 0)
+      { // SLLI
+        unsigned int shamt = rs2;
+        if (rd == 0) 
+        {
+          cout << "ERROR: Cannot write to x0 (rd = 0)." << endl;
+        } 
+        else 
+        {
+          reg[rd] = reg[rs1] << shamt;
+          cout << "slli x" << rd << ", x" << rs1 << ", " 
+                << shamt << endl;
+          usedRegs = {rd, rs1};
+        }
+      }
+      break;
+
+    case 0b0000011: // I-type LD
+      if (funct3 == 3) 
+      {
+        if (rd == 0) 
+        {
+          cout << "ERROR: Cannot write to x0 (rd = 0)." << endl;
+        } 
+        else 
+        {
+          uint64_t mem_addr = reg[rs1] + immediate;
+          uint64_t val = 0;
+          for (int i = 0; i < 8; i++) 
+          {
+            val |= ((uint64_t)mem[mem_addr + i]) << (i * 8);
+          }
+          reg[rd] = val;
+          cout << "ld x" << rd << ", " << immediate 
+                << "(x" << rs1 << ")" << endl;
+          usedRegs = {rd, rs1};
+        }
+      }
+      break;
+
+    case 0b0100011: // S-type SD
+      if (funct3 == 3) 
+      {
+        uint64_t mem_addr = reg[rs1] + imm_s;
+        uint64_t val = reg[rs2];
+        for (int i = 0; i < 8; i++) 
+        {
+          mem[mem_addr + i] = (val >> (i * 8)) & 0xFF;
+        }
+        cout << "sd x" << rs2 << ", " << imm_s 
+              << "(x" << rs1 << ")" << endl;
+        usedRegs = {rs1, rs2};
+      }
+      break;
+
+     case 0b1100011: // B-type Branch instructions
+      if (funct3 == 0x1) 
+        { // BLT 
+          if ((long long)reg[rs1] < (long long)reg[rs2]) 
+          {
+            cout << "blt x" << rs1 << ", x" << rs2 << ", " 
+                 << imm_b << " (branch taken)" << endl;
+            pcOffset = imm_b;
+          } 
+          else 
+          {
+            cout << "blt x" << rs1 << ", x" << rs2 << ", " 
+                 << imm_b << " (branch not taken)" << endl;
+          }
+          usedRegs = {rs1, rs2};
+        }
+        else if (funct3 == 0x0)
+        { // BEQ
+          if (reg[rs1] == reg[rs2]) 
+          {
+            cout << "beq x" << rs1 << ", x" << rs2 << ", " 
+                 << imm_b << " (branch taken)" << endl;
+            pcOffset = imm_b;
+          } 
+          else 
+          {
+            cout << "beq x" << rs1 << ", x" << rs2 << ", " 
+                 << imm_b << " (branch not taken)" << endl;
+          }
+          usedRegs = {rs1, rs2};
+        }
+        else if (funct3 == 0x5)
+        { // BGE
+          if ((long long)reg[rs1] >= (long long)reg[rs2]) 
+          {
+            cout << "bge x" << rs1 << ", x" << rs2 << ", " 
+                 << imm_b << " (branch taken)" << endl;
+            pcOffset = imm_b;
+          } 
+          else 
+          {
+            cout << "bge x" << rs1 << ", x" << rs2 << ", " 
+                 << imm_b << " (branch not taken)" << endl;
+          }
+          usedRegs = {rs1, rs2};
+        }
+      break;
+
+    default:
+      cout << "Unsupported instruction.\n"
+            << "opcode = 0x" << hex << opcode
+            << "\tfunct3 = 0x" << funct3
+            << "\tfunct7 = 0x" << funct7 << dec << endl;
+      cout.flags(originalFlags);
+      return 4;
+  }
+
+  if (!usedRegs.empty()) 
+  {
+    cout << "\n[Register Dump]\n";
+    for (int r : usedRegs) {
+      if (r == 0) continue;
+      cout << "x" << dec << setw(2) << left << r
+           << " = " << reg[r]
+           << "\t(0x" << hex << uppercase << reg[r] << ")\n";
+    }
+  }
+  
+  cout.flags(originalFlags);
+  cout << dec;
+  
+  return pcOffset;
+}
