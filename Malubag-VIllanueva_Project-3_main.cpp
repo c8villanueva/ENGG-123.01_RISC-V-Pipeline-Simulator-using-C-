@@ -162,10 +162,9 @@ void showData(string &address, int N, uint8_t * &data_memory,
       val |= ((uint64_t)data_memory[addr + j]) << (j * 8);
     }
     
-    cout << hex << uppercase << "0x" << setw(8) << setfill('0') 
+    cout << "0x" << hex << uppercase << setw(8) << setfill('0') 
          << addr << "\t";
-    cout << hex << uppercase << setw(16) << setfill('0') << val 
-         << dec << setfill(' ') << endl;
+    cout << setw(16) << setfill('0') << val << dec << endl;
 
     addr += 8;
   }
@@ -180,19 +179,18 @@ void showCode(string &address, int N, uint8_t * &instruction_memory,
     cout << "\nERROR: Address exceeds memory size." << endl;
     return;
   }
-  
+
   for(int i=0; i<N; i++)
   {
-    uint64_t val = 0;
+    uint32_t val = 0;
     for(int j=0; j<4; j++)
     {
       val |= (uint32_t)instruction_memory[addr + j] << (j * 8);
     }
     
-    cout << hex << uppercase << "0x" << setw(8) << setfill('0') 
+    cout << "0x" << hex << uppercase << setw(8) << setfill('0') 
          << addr << "\t";
-    cout << hex << uppercase << setw(8) << setfill('0') << val 
-         << dec << setfill(' ') << endl;
+    cout << setw(8) << setfill('0') << val << dec << endl;
 
     addr += 4;
   }
@@ -201,6 +199,9 @@ void showCode(string &address, int N, uint8_t * &instruction_memory,
 int execInstruction(unsigned int instruction, long long * &reg, 
                      uint8_t * &mem)
 {
+  // Save cout state
+  ios_base::fmtflags originalFlags = cout.flags();
+  
   cout << "\nInstruction: " << bitset<32>(instruction) << "\n\n";
 
   unsigned int opcode =  instruction & 0x7F;
@@ -238,8 +239,7 @@ int execInstruction(unsigned int instruction, long long * &reg,
       { // ADD
         if (rd == 0) 
         {
-          cout << "ERROR: Cannot write to x0 (rd = 0)." 
-                << endl;
+          cout << "ERROR: Cannot write to x0 (rd = 0)." << endl;
         } 
         else 
         {
@@ -327,11 +327,6 @@ int execInstruction(unsigned int instruction, long long * &reg,
           cout << "ld x" << rd << ", " << immediate 
                 << "(x" << rs1 << ")" << endl;
           usedRegs = {rd, rs1};
-
-          cout << "[DEBUG] Stored value " << hex << reg[rs2] 
-               << " at address 0x" << mem_addr 
-               << endl;
-
         }
       }
       break;
@@ -339,25 +334,15 @@ int execInstruction(unsigned int instruction, long long * &reg,
     case 0b0100011: // S-type SD
       if (funct3 == 3) 
       {
-        if (rs2 == 0) 
+        uint64_t mem_addr = reg[rs1] + imm_s;
+        uint64_t val = reg[rs2];
+        for (int i = 0; i < 8; i++) 
         {
-          cout << "\nERROR: Cannot store from x0 (rs2 = 0)." 
-                << endl; 
-        } 
-        else 
-        {
-          uint64_t mem_addr = reg[rs1] + imm_s;
-          uint64_t val = reg[rs2];
-          for (int i = 0; i < 8; i++) 
-          {
-            mem[mem_addr + i] = (val >> (i * 8)) & 0xFF;
-          }
-          cout << "sd x" << rs2 << ", " << imm_s 
-                << "(x" << rs1 << ")" << endl;
-          usedRegs = {rs1, rs2};
-
-          cout << "[DEBUG] mem_addr = 0x" << hex << mem_addr << dec << endl;
+          mem[mem_addr + i] = (val >> (i * 8)) & 0xFF;
         }
+        cout << "sd x" << rs2 << ", " << imm_s 
+              << "(x" << rs1 << ")" << endl;
+        usedRegs = {rs1, rs2};
       }
       break;
 
@@ -411,9 +396,11 @@ int execInstruction(unsigned int instruction, long long * &reg,
 
     default:
       cout << "Unsupported instruction.\n"
-            << "opcode = "   << opcode
-            << "\tfunct3 = " << funct3
-            << "\tfunct7 = " << funct7 << endl;
+            << "opcode = 0x" << hex << opcode
+            << "\tfunct3 = 0x" << funct3
+            << "\tfunct7 = 0x" << funct7 << dec << endl;
+      cout.flags(originalFlags);
+      return 4;
   }
 
   if (!usedRegs.empty()) 
@@ -421,13 +408,16 @@ int execInstruction(unsigned int instruction, long long * &reg,
     cout << "\n[Register Dump]\n";
     for (int r : usedRegs) {
       if (r == 0) continue;
-      cout << "x" << setw(2) << left << r
-           << " = " << dec << reg[r]
+      cout << "x" << dec << setw(2) << left << r
+           << " = " << reg[r]
            << "\t(0x" << hex << uppercase << reg[r] << ")\n";
     }
-    cout << dec;
   }
-
+  
+  // Restore cout state
+  cout.flags(originalFlags);
+  cout << dec;
+  
   return pcOffset;
 }
 
@@ -453,6 +443,12 @@ int main()
   const int memory_size = 1024 * 64; // 64 KB
   uint8_t *data_memory = new uint8_t [memory_size]; 
   uint8_t *instruction_memory = new uint8_t [memory_size];
+  
+  // Initialize memory to zero
+  for(int i=0; i<memory_size; i++) {
+    data_memory[i] = 0;
+    instruction_memory[i] = 0;
+  }
   
   while(true)
   {
@@ -516,6 +512,9 @@ int main()
         }
         else
         {
+          // Convert address string to number for display
+          unsigned long long addr_num = stoull(address, nullptr, 16);
+          
           if(command == "LOADDATA") 
           {
             if (!loadData(address, filename, 
@@ -525,9 +524,9 @@ int main()
             else
             {
               cout << "\nData loaded successfully from " << filename 
-                   << " to address " << hex << uppercase 
-                   << "0x" << setw(8) << setfill('0') << address 
-                   << endl;
+                   << " to address 0x" << hex << uppercase 
+                   << setw(8) << setfill('0') << addr_num 
+                   << dec << endl;
             }
           }
           else if(command == "LOADCODE") 
@@ -539,9 +538,9 @@ int main()
             else
             {
               cout << "\nInstructions loaded successfully from " 
-                   << filename << " to address " << hex << uppercase 
-                   << "0x" << setw(8) << setfill('0') 
-                   << address << endl;
+                   << filename << " to address 0x" << hex << uppercase 
+                   << setw(8) << setfill('0') << addr_num 
+                   << dec << endl;
             }
           }
         }
@@ -569,10 +568,11 @@ int main()
         }
         else
         {
-          cout << "\nShowing " << N << " "
+          unsigned long long addr_num = stoull(address, nullptr, 16);
+          cout << "\nShowing " << dec << N << " "
                << (command == "SHOWDATA" ? "data" : "instructions") 
-               << " from address " << hex << uppercase << "0x" 
-               << setw(8) << setfill('0') << address << endl;
+               << " from address 0x" << hex << uppercase 
+               << setw(8) << setfill('0') << addr_num << dec << endl;
 
           if(command == "SHOWDATA") 
           {
@@ -606,14 +606,13 @@ int main()
       unsigned long long PC = addr;
 
       cout << "\n[Starting execution at 0x" << hex << uppercase 
-           << setw(8) << setfill('0') << PC << "]\n";
+           << setw(8) << setfill('0') << PC << dec << "]\n";
 
       while (true)
       {
-        if (PC + 4 >= memory_size)
+        if (PC + 4 > memory_size)
         {
-          cout << endl 
-               << "[ERROR] Program counter out of bounds." 
+          cout << "\n[ERROR] Program counter out of bounds." 
                << " Halting execution.\n";
           break;
         }
@@ -630,7 +629,7 @@ int main()
         }
 
         cout << "\nExecuting instruction at 0x" << hex << uppercase 
-             << setw(8) << setfill('0') << PC << "...\n";
+             << setw(8) << setfill('0') << PC << dec << "...\n";
 
         int pcOffset = execInstruction(instr, registers, 
                                        data_memory);
@@ -639,7 +638,7 @@ int main()
       }
 
       cout << "\nExecution finished\n";
-      }
+    }
 
     else
     {
