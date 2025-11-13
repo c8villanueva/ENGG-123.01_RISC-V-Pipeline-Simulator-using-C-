@@ -1,0 +1,14 @@
+to compile:
+g++ -o test.exe Malubag-VIllanueva_Project-3_main.cpp
+
+to run:
+.\test.exe
+
+for testing:
+loaddata 2000 dataA.txt
+loaddata 1000 dataB.txt
+loadcode 0000 assemblyCode.txt
+showdata 2000 6
+showdata 1000 6
+exec 0000
+showdata 1000 6
