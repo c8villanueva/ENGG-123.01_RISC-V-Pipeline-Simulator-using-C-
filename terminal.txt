@@ -9,6 +9,7 @@ loaddata 2000 dataA.txt
 loaddata 1000 dataB.txt
 loadcode 0000 assemblyCode.txt
 showdata 2000 6
-showdata 1000 6
+showdata 1000 11
+showcode 0000 10
 exec 0000
-showdata 1000 6
+showdata 1000 11

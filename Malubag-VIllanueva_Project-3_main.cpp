@@ -196,13 +196,6 @@ void showCode(string &address, int N, uint8_t * &instruction_memory,
   }
 }
 
-// // TBD: MOVED TO INSTRUCTION_DECODE & _EXECUTE
-// int execInstruction(unsigned int instruction, long long * &reg, 
-//                      uint8_t * &mem)
-// {
-//   // check p2_code_dump.txt
-// }
-
 // PIPELINING STAGES (info from geeksforgeeks)
 
 // TBD: TO IMPROVE...
@@ -223,11 +216,15 @@ unsigned int instruction_fetch(int pc, uint8_t * &instruction_memory)
 }
 
 // decodes instruction and register file is accessed to obtain values of registers used in instruction
-// TBD: TO FIX
+// FIXED: Added support for LUI and MUL instructions
 void instruction_decode(unsigned int instruction, long long *&reg,
                         string &inst, long long &a, long long &b,
                         long long &c, int &rd)
 {
+  // DEBUG: Print the raw instruction
+  cout << "[DEBUG] Raw instruction: 0x" << hex << instruction << dec << endl;
+  cout << "[DEBUG] Opcode: 0x" << hex << (instruction & 0x7F) << dec << endl;
+  
   unsigned int opcode = instruction & 0x7F;
   rd = (instruction >> 7) & 0x1F;
 
@@ -238,116 +235,115 @@ void instruction_decode(unsigned int instruction, long long *&reg,
   unsigned int funct7 = (instruction >> 25) & 0x7F;
 
   // I Format
-  int immediate = (instruction >> 20) & 0xFFF;
-  if (immediate & 0x800) immediate |= 0xFFFFF000;
+  int immediate_i = (instruction >> 20) & 0xFFF;
+  if (immediate_i & 0x800) immediate_i |= 0xFFFFF000;
 
   // S Format
-  int imm_s = ((instruction >> 7) & 0x1F) |
-              (((instruction >> 25) & 0x7F) << 5);
+  int imm_s = ((instruction >> 7) & 0x1F) | (((instruction >> 25) & 0x7F) << 5);
   if (imm_s & 0x800) imm_s |= 0xFFFFF000;
 
-  // B Format
-  int imm_b = (((instruction >> 8) & 0x0F) << 1) |
-              (((instruction >> 25) & 0x3F) << 5) |
-              (((instruction >> 7) & 0x01) << 11) |
-              (((instruction >> 31) & 0x01) << 12);
-  if (imm_b & 0x1000) imm_b |= 0xFFFFE000;
+  // U Format (for LUI)
+  int imm_u = instruction & 0xFFFFF000;
+
+  // Debug output to see what instruction we're decoding
+  cout << "[DECODE] Instruction: 0x" << hex << instruction 
+       << " opcode: 0x" << opcode << " funct3: 0x" << funct3 
+       << " funct7: 0x" << funct7 << dec << endl;
 
   switch (opcode)
   {
-  case 0b0110011: // R-type ADD/SUB
+  case 0b0110011: // R-type ADD/SUB/MUL
     if (funct3 == 0 && funct7 == 0x00)
     {
-      if (rd == 0)
-      {
-        cout << "ERROR: Cannot write to x0 (rd = 0)." << endl;
-      }
-      else
-      {
-        inst = "ADD";
-        a = reg[rs1];
-        b = reg[rs2];
-        c = reg[rd];
-      }
+      inst = "ADD";
+      a = reg[rs1];
+      b = reg[rs2];
+      c = reg[rd];
     }
     else if (funct3 == 0 && funct7 == 0x20)
     {
-      if (rd == 0)
-      {
-        cout << "ERROR: Cannot write to x0 (rd = 0)." << endl;
-      } 
-      else
-      {
-        inst = "SUB";
-        a = reg[rs1];
-        b = reg[rs2];
-        c = reg[rd];
-      }
+      inst = "SUB";
+      a = reg[rs1];
+      b = reg[rs2];
+      c = reg[rd];
+    }
+    else if (funct3 == 0 && funct7 == 0x01)
+    {
+      inst = "MUL";
+      a = reg[rs1];
+      b = reg[rs2];
+      c = reg[rd];
     }
     break;
 
   case 0b0010011: // I-type
-    if (funct3 == 0)
+    if (funct3 == 0) // ADDI
     {
-      // ADDI
-      if (rd == 0)
-      {
-        // NOP detection (addi x0, x0, 0)
-        if (!(opcode == 0b0010011 && funct3 == 0 && rs1 == 0 && immediate == 0))
-          cout << "ERROR: Cannot write to x0 (rd = 0)." << endl;
-        else
-          cout << "NOP (addi x0, x0, 0)" << endl;
-      }
-      else
-      {
-        inst = "ADDI";
-        a = reg[rs1];
-        b = immediate;
-        c = reg[rd];
-      }
+      inst = "ADDI";
+      a = reg[rs1];
+      b = immediate_i;
+      c = reg[rd];
     }
-    else if (funct3 == 1 && funct7 == 0x00)
+    else if (funct3 == 1 && funct7 == 0x00) // SLLI
     {
-      // SLLI
-      unsigned int shamt = rs2;
-      if (rd == 0)
-        cout << "ERROR: Cannot write to x0 (rd = 0)." << endl;
-      else
-      {
-        inst = "SLLI";
-        a = reg[rs1];
-        b = shamt;
-        c = reg[rd];
-      }
+      inst = "SLLI";
+      a = reg[rs1];
+      b = rs2; // shamt is in rs2 field for SLLI
+      c = reg[rd];
     }
     break;
 
-  // ---------------- B-type: BLT, BEQ ----------------
-  case 0b1100011:
-    if (funct3 == 0x1)
+  case 0b0110111: // U-type: LUI
+    inst = "LUI";
+    a = imm_u;
+    b = 0;
+    c = reg[rd];
+    break;
+
+  case 0b0000011: // I-type Load
+    if (funct3 == 0x3) // LD
     {
-      inst = "BLT";
+      inst = "LD";
       a = reg[rs1];
-      b = reg[rs2];
-      c = imm_b;
+      b = immediate_i;
+      // c will be set in memory_access
     }
-    else if (funct3 == 0x0)
+    break;
+
+  case 0b0100011: // S-type Store
+    if (funct3 == 0x3) // SD - 64-bit store
     {
-      inst = "BEQ";
+      inst = "SD";
       a = reg[rs1];
-      b = reg[rs2];
-      c = imm_b;
+      b = imm_s;
+      c = reg[rs2];
+      rd = 0;
+      cout << "[DECODE] SD instruction: rs1=x" << rs1 << " rs2=x" << rs2 
+          << " imm=" << imm_s << " base=" << a << " value=" << c << endl;
+    }
+    else if (funct3 == 0x2) // SW - 32-bit store  
+    {
+      inst = "SW";
+      a = reg[rs1];
+      b = imm_s;
+      c = reg[rs2];
+      rd = 0;
+      cout << "[DECODE] SW instruction: rs1=x" << rs1 << " rs2=x" << rs2 
+          << " imm=" << imm_s << " base=" << a << " value=" << c << endl;
     }
     break;
 
   default:
     inst = "UNKNOWN";
+    cout << "[DECODE] Unknown instruction: opcode=0x" << hex << opcode << dec << endl;
     break;
   }
+  
+  cout << "[DECODE] Decoded as: " << inst << endl;
 }
 
 // some activities are done such as ALU operations
-// TBD: TO ADD VALIDATION IF NEEDED
+// FIXED: Added support for LUI and MUL instructions
 void instruction_execute(string &inst, long long &a, long long &b,
                          long long &c, int &rd, int &pc_offset)
 {
@@ -371,12 +367,28 @@ void instruction_execute(string &inst, long long &a, long long &b,
     c = a << b;
     pc_offset = 4;
   }
+  else if (inst == "LUI")
+  {
+    c = a;
+    pc_offset = 4;
+  }
+  else if (inst == "MUL")
+  {
+    c = a * b;
+    pc_offset = 4;
+  }
+  else if (inst == "LD" || inst == "SD")
+  {
+    // For load/store, the address calculation is done in memory_access
+    // Just pass through to next stage
+    pc_offset = 4;
+  }
   else if (inst == "BLT")
   {
     if (a < b)
-      pc_offset = c; // branch taken
+      pc_offset = c;
     else
-      pc_offset = 4; // next instruction
+      pc_offset = 4;
   }
   else if (inst == "BEQ")
   {
@@ -396,9 +408,13 @@ void memory_access(string &inst, long long &a, long long &b,
                    long long &c, int &rd, uint8_t *&mem, 
                    const int memory_size)
 {
+  uint64_t address = a + b;
+  
+  cout << "[MEMORY_ACCESS] " << inst << " address=0x" << hex << address 
+       << " value=" << dec << c << endl;
+  
   if (inst == "LD") 
   {
-    uint64_t address = a + b;
     if (address + 8 > memory_size) 
     {
       cout << "ERROR: Memory access out of bounds." << endl;
@@ -409,21 +425,38 @@ void memory_access(string &inst, long long &a, long long &b,
     {
       c |= ((uint64_t)mem[address + i]) << (i * 8);
     }
+    cout << "[MEMORY_ACCESS] LD loaded value: " << c << endl;
   }
   else if (inst == "SD") 
   {
-    uint64_t address = a + b;
     if (address + 8 > memory_size) 
     {
       cout << "ERROR: Memory access out of bounds." << endl;
       return;
     }
+    cout << "[MEMORY_ACCESS] SD storing value " << c << " to address 0x" << hex << address << dec << endl;
     for (int i = 0; i < 8; i++) 
     {
       mem[address + i] = (c >> (i * 8)) & 0xFF;
     }
+    cout << "[MEMORY_ACCESS] SD store completed" << endl;
   }  
+  else if (inst == "SW") 
+  {
+    if (address + 4 > memory_size) 
+    {
+      cout << "ERROR: Memory access out of bounds." << endl;
+      return;
+    }
+    cout << "[MEMORY_ACCESS] SW storing value " << c << " to address 0x" << hex << address << dec << endl;
+    for (int i = 0; i < 4; i++) 
+    {
+      mem[address + i] = (c >> (i * 8)) & 0xFF;
+    }
+    cout << "[MEMORY_ACCESS] SW store completed" << endl;
+  }
 }
+
 
 // computed/fetched value is written back to the register present in the instructions
 void write_back(string &inst, long long &c, int &rd, long long * &reg)
@@ -448,7 +481,10 @@ int pipeline_loop(unsigned int instr, long long *&reg, uint8_t *&mem, const int 
   memory_access(inst, a, b, c, rd, mem, memory_size);
   write_back(inst, c, rd, reg);
 
-  cout << "[PIPELINE] " << inst << " executed." << endl;
+  // Debug output to see what's happening
+  cout << "[PIPELINE] " << inst << " executed. (rd=x" << rd 
+       << ", result=" << c << ")" << endl;
+
   return pc_offset;
 }
 
@@ -662,8 +698,6 @@ int main()
         cout << "\nExecuting instruction at 0x" << hex << uppercase 
              << setw(8) << setfill('0') << PC << dec << "...\n";
 
-        // TBD: was previously exec_instruction
-        // int pcOffset = pipeline_loop(instr, registers, data_memory);
         int pcOffset = pipeline_loop(instr, registers, data_memory, memory_size);
 
         PC += pcOffset; 
