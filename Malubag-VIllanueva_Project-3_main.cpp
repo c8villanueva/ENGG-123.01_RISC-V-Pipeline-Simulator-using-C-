@@ -219,17 +219,10 @@ unsigned int instruction_fetch(int pc, uint8_t * &instruction_memory)
 
 // decodes instruction and register file is accessed to obtain values
 // of registers used in instruction
-// FIXED: Added support for LUI and MUL instructions
 void instruction_decode(unsigned int instruction, long long *&reg,
                         string &inst, long long &a, long long &b,
                         long long &c, int &rd)
-{
-  // DEBUG: Print the raw instruction
-  cout << "[DEBUG] Raw instruction: 0x" << hex << instruction 
-       << dec << endl;
-  cout << "[DEBUG] Opcode: 0x" << hex << (instruction & 0x7F) 
-       << dec << endl;
-  
+{  
   unsigned int opcode = instruction & 0x7F;
   rd = (instruction >> 7) & 0x1F;
 
@@ -248,10 +241,9 @@ void instruction_decode(unsigned int instruction, long long *&reg,
               (((instruction >> 25) & 0x7F) << 5);
   if (imm_s & 0x800) imm_s |= 0xFFFFF000;
 
-  // U Format (for LUI)
+  // U Format
   int imm_u = instruction & 0xFFFFF000;
 
-  // Debug output to see what instruction we're decoding
   cout << "[DECODE] Instruction: 0x" << hex << instruction 
        << " opcode: 0x" << opcode << " funct3: 0x" << funct3 
        << " funct7: 0x" << funct7 << dec << endl;
@@ -282,24 +274,24 @@ void instruction_decode(unsigned int instruction, long long *&reg,
     }
     break;
 
-  case 0b0010011: // I-type
-    if (funct3 == 0) // ADDI
+  case 0b0010011: // I-type ADDI/SLLI
+    if (funct3 == 0)
     {
       inst = "ADDI";
       a = reg[rs1];
       b = immediate_i;
       c = reg[rd];
     }
-    else if (funct3 == 1 && funct7 == 0x00) // SLLI
+    else if (funct3 == 1 && funct7 == 0x00)
     {
       inst = "SLLI";
       a = reg[rs1];
-      b = rs2; // shamt is in rs2 field for SLLI
+      b = rs2;
       c = reg[rd];
     }
     break;
 
-  case 0b0110111: // U-type: LUI
+  case 0b0110111: // U-type LUI
     inst = "LUI";
     a = imm_u;
     b = 0;
@@ -312,12 +304,12 @@ void instruction_decode(unsigned int instruction, long long *&reg,
       inst = "LD";
       a = reg[rs1];
       b = immediate_i;
-      // c will be set in memory_access
+      // c is set in memory_access
     }
     break;
 
-  case 0b0100011: // S-type Store
-    if (funct3 == 0x3) // SD - 64-bit store
+  case 0b0100011: // S-type SD/SW
+    if (funct3 == 0x3) // 64-bit store
     {
       inst = "SD";
       a = reg[rs1];
@@ -328,7 +320,7 @@ void instruction_decode(unsigned int instruction, long long *&reg,
            << " rs2=x" << rs2 << " imm=" << imm_s 
            << " base=" << a << " value=" << c << endl;
     }
-    else if (funct3 == 0x2) // SW - 32-bit store  
+    else if (funct3 == 0x2) // 32-bit store  
     {
       inst = "SW";
       a = reg[rs1];
@@ -352,7 +344,6 @@ void instruction_decode(unsigned int instruction, long long *&reg,
 }
 
 // some activities are done such as ALU operations
-// FIXED: Added support for LUI and MUL instructions
 void instruction_execute(string &inst, long long &a, long long &b,
                          long long &c, int &rd, int &pc_offset)
 {
@@ -497,7 +488,6 @@ int pipeline_loop(unsigned int instr, long long *&reg,
   memory_access(inst, a, b, c, rd, mem, memory_size);
   write_back(inst, c, rd, reg);
 
-  // Debug output to see what's happening
   cout << "[PIPELINE] " << inst << " executed. (rd=x" << rd 
        << ", result=" << c << ")" << endl;
 
