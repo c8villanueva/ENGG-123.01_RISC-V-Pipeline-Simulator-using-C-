@@ -30,8 +30,6 @@ void showCode(string &address, int N, uint8_t * &instruction_memory,
               const int memory_size);
 
 // PIPELINING STAGES
-//unsigned int instruction_fetch(int pc, uint8_t 
-//                               * &instruction_memory);
 void instruction_decode(unsigned int instruction, long long *&reg,
                         string &inst, long long &a, long long &b,
                         long long &c, int &rd);

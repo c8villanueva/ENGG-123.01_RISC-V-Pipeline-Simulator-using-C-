@@ -199,21 +199,6 @@ void showCode(string &address, int N, uint8_t * &instruction_memory,
 
 // PIPELINING STAGES
 
-// fetches a single instruction from address in memory location 
-// whose value is stored in program counter
-// unsigned int instruction_fetch(int pc, uint8_t * &instruction_memory)
-// {
-//   unsigned int instruction = 0;
-  
-//   for(int i = 0; i < 4; i++)
-//   {
-//     instruction |= ((unsigned int)instruction_memory[pc + i]) 
-//                 << (i * 8);
-//   }
-
-//   return instruction;
-// }
-
 // decodes instruction and register file is accessed to obtain values
 // of registers used in instruction
 void instruction_decode(unsigned int instruction, long long *&reg,

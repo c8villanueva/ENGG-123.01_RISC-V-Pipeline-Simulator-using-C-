@@ -212,7 +212,9 @@ int main()
           break;
         }
 
-        //instruction_fetch()
+        // instruction_fetch() is done here
+        // fetches a single instruction from address in 
+        // memory location whose value is stored in program counter
         unsigned int instr = 0;
         for (int j = 0; j < 4; j++)
         {
