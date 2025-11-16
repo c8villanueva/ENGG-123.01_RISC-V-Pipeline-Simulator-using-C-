@@ -212,6 +212,7 @@ int main()
           break;
         }
 
+        //instruction_fetch()
         unsigned int instr = 0;
         for (int j = 0; j < 4; j++)
         {
