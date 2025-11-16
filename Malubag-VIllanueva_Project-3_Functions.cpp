@@ -197,14 +197,10 @@ void showCode(string &address, int N, uint8_t * &instruction_memory,
   }
 }
 
-// PIPELINING STAGES (info from geeksforgeeks)
-
-// TBD: TO IMPROVE...
-// [] make string isnt, long long a, b, c and int rd as struct/class
+// PIPELINING STAGES
 
 // fetches a single instruction from address in memory location 
-//whose value is stored in program counter
-// TBD: TO ADD VALIDATION FOR OUT OF BOUNDS
+// whose value is stored in program counter
 unsigned int instruction_fetch(int pc, uint8_t * &instruction_memory)
 {
   unsigned int instruction = 0;
